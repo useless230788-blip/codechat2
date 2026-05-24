@@ -1,0 +1,5 @@
+{
+  "name": "CodeChat",
+  "description": "A private chat application where users can connect using a shared secret code.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,96 @@
+{
+  "entities": {
+    "Room": {
+      "title": "Chat Room",
+      "description": "A chat room identified by a unique code.",
+      "type": "object",
+      "properties": {
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the room was created."
+        },
+        "lastMessageAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the last message was sent."
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the room creator."
+        },
+        "members": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of UIDs who are members of this room."
+        }
+      },
+      "required": ["createdAt", "ownerId", "members"]
+    },
+    "AccessRequest": {
+      "title": "Access Request",
+      "description": "A request to join a room.",
+      "type": "object",
+      "properties": {
+        "requesterId": { "type": "string" },
+        "requesterName": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "declined"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["requesterId", "requesterName", "status", "createdAt"]
+    },
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with chosen username.",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["username"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "A message within a chat room.",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The content of the message."
+        },
+        "senderId": {
+          "type": "string",
+          "description": "The UID of the sender."
+        },
+        "senderName": {
+          "type": "string",
+          "description": "The display name of the sender."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the message was sent."
+        }
+      },
+      "required": ["text", "senderId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "User" },
+      "description": "User profiles."
+    },
+    "/rooms/{roomCode}": {
+      "schema": { "$ref": "Room" },
+      "description": "A chat room."
+    },
+    "/rooms/{roomCode}/messages/{messageId}": {
+      "schema": { "$ref": "Message" },
+      "description": "A message in a room."
+    },
+    "/rooms/{roomCode}/requests/{requestId}": {
+      "schema": { "$ref": "AccessRequest" },
+      "description": "Access requests for a room."
+    }
+  }
+}

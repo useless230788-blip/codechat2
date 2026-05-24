@@ -1,0 +1,139 @@
+rules_version = '2';
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: rooms
+// Document ID: {roomCode} (string)
+// Fields:
+//   - createdAt: timestamp (required) - When the room was created.
+//   - lastMessageAt: timestamp (optional) - When the last message was sent.
+//
+// Collection: rooms/{roomCode}/messages
+// Document ID: {messageId} (auto-generated)
+// Fields:
+//   - text: string (required, max 1000 chars) - Message content.
+//   - senderId: string (required) - UID of the sender.
+//   - senderName: string (required) - Display name of the sender.
+//   - createdAt: timestamp (required) - When the message was sent.
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "microgamerz00001@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['username']) &&
+             data.keys().size() <= 4 &&
+             data.username is string && data.username.size() >= 2 && data.username.size() <= 30;
+    }
+
+    function isValidRoom(data) {
+      return data.keys().hasAll(['createdAt', 'ownerId', 'members']) &&
+             data.keys().size() <= 4 &&
+             (data.createdAt == request.time || data.createdAt is timestamp) &&
+             data.ownerId is string && data.ownerId == request.auth.uid &&
+             data.members is list && data.members.hasAll([request.auth.uid]) && data.members.size() <= 10;
+    }
+
+    function isRoomMember(roomCode) {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/rooms/$(roomCode)).data.members.hasAny([request.auth.uid]);
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['text', 'senderId', 'senderName', 'createdAt']) &&
+             data.keys().size() == 4 &&
+             data.text is string && data.text.size() > 0 && data.text.size() <= 1000 &&
+             data.senderId is string && data.senderId == request.auth.uid &&
+             data.senderName is string && data.senderName.size() > 0 && data.senderName.size() <= 100 &&
+             (data.createdAt == request.time || data.createdAt is timestamp);
+    }
+
+    function isValidRequest(data) {
+      return data.keys().hasAll(['requesterId', 'requesterName', 'status', 'createdAt']) &&
+             data.keys().size() == 4 &&
+             data.requesterId == request.auth.uid &&
+             data.status == 'pending' &&
+             (data.createdAt == request.time || data.createdAt is timestamp);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) && isValidUser(request.resource.data);
+    }
+
+    match /rooms/{roomCode} {
+      allow get: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidRoom(request.resource.data);
+      allow update: if isAuthenticated() &&
+        (
+          // Allow existing members to update room (e.g. approve requests or update lastMessageAt)
+          resource.data.members.hasAny([request.auth.uid]) ||
+          // Allow 2nd person to join automatically if room exists and has < 2 members
+          (
+            resource.data.members.size() < 2 &&
+            request.resource.data.members.size() == resource.data.members.size() + 1 &&
+            request.resource.data.members.hasAll(resource.data.members) &&
+            request.resource.data.members.hasAll([request.auth.uid]) &&
+            request.resource.data.ownerId == resource.data.ownerId &&
+            request.resource.data.createdAt == resource.data.createdAt
+          )
+        );
+
+      match /messages/{messageId} {
+        allow read: if isRoomMember(roomCode);
+        allow create: if isRoomMember(roomCode) && isValidMessage(request.resource.data);
+      }
+
+      match /requests/{requestId} {
+        allow read: if isAuthenticated() && (request.auth.uid == requestId || isRoomMember(roomCode));
+        allow create: if isAuthenticated() && requestId == request.auth.uid && isValidRequest(request.resource.data);
+        allow update: if isRoomMember(roomCode) &&
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+                      request.resource.data.status in ['approved', 'declined'];
+      }
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
